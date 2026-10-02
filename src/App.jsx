@@ -8,6 +8,8 @@ import SalesPage from './pages/SalesPage'
 import UsersPage from './pages/UsersPage'
 import CashRegisterPage from './pages/CashRegisterPage'
 import SalesHistoryPage from './pages/SalesHistoryPage'
+import TablesPage from './pages/TablesPage'
+import InventoryPage from './pages/InventoryPage'
 import ProtectedRoute from './routes/ProtectedRoute'
 
 export default function App() {
@@ -18,9 +20,10 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/dashboard" element={<HomePage />} />
-          <Route path="/ventas" element={<ProtectedRoute roles={['ADMIN', 'CAJERO']}><SalesPage /></ProtectedRoute>} />
+          <Route path="/mesas" element={<ProtectedRoute roles={['ADMIN', 'CAJERO']}><TablesPage /></ProtectedRoute>} />
           <Route path="/historial" element={<ProtectedRoute roles={['ADMIN', 'CAJERO']}><SalesHistoryPage /></ProtectedRoute>} />
           <Route path="/productos" element={<ProtectedRoute roles={['ADMIN']}><ProductsPage /></ProtectedRoute>} />
+          <Route path="/inventario" element={<ProtectedRoute roles={['ADMIN', 'CAJERO']}><InventoryPage /></ProtectedRoute>} />
           <Route path="/usuarios" element={<ProtectedRoute roles={['ADMIN']}><UsersPage /></ProtectedRoute>} />
           <Route path="/caja" element={<ProtectedRoute roles={['ADMIN', 'CAJERO']}><CashRegisterPage /></ProtectedRoute>} />
           <Route path="/pedidos" element={<ProtectedRoute roles={['ADMIN', 'CAJERO', 'COCINA']}><PendingPage title="Pedidos" /></ProtectedRoute>} />

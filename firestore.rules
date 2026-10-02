@@ -38,7 +38,8 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || isCashier();
       allow delete: if isAdmin() && resource.data.salesCount == 0;
     }
 
@@ -51,13 +52,28 @@ service cloud.firestore {
       allow delete, list: if false;
     }
 
+    match /settings/tablesConfig {
+      allow read: if signedIn();
+      allow write: if isCashier();
+    }
+
     match /sales/{saleId} {
       allow create: if isCashier()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.status == 'COMPLETED'
         && request.resource.data.saleNumber == getAfter(/databases/$(database)/documents/settings/counters).data.saleOrderNumber;
       allow get, list: if isAdmin() || (isCashier() && resource.data.userId == request.auth.uid);
-      allow update, delete: if false;
+      // La venta se conserva para auditoría: solo se permite anularla y nunca
+      // modificar sus importes, artículos ni eliminarla.
+      allow update: if (isAdmin() || (isCashier() && resource.data.userId == request.auth.uid))
+        && resource.data.status == 'COMPLETED'
+        && request.resource.data.status == 'CANCELLED'
+        && request.resource.data.cancelledBy == request.auth.uid
+        && request.resource.data.cancelReason is string
+        && request.resource.data.cancelReason.size() > 2
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'cancelledAt', 'cancelledBy', 'cancelReason']);
+      allow delete: if false;
     }
 
     match /orders/{orderId} {
@@ -67,6 +83,12 @@ service cloud.firestore {
         && request.resource.data.saleNumber == getAfter(/databases/$(database)/documents/settings/counters).data.saleOrderNumber;
       allow get, list: if signedIn();
       allow update, delete: if false;
+    }
+
+    match /tableOrders/{tableId} {
+      allow read: if signedIn();
+      allow create, update: if isCashier();
+      allow delete: if false;
     }
 
     // Business collections remain closed until their respective phases.

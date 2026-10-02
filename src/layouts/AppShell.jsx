@@ -4,10 +4,11 @@ import { useAuth } from '../context/AuthContext'
 
 const links = [
   ['/', 'Inicio'],
-  ['/ventas', 'Ventas'],
+  ['/mesas', 'Mesas'],
   ['/pedidos', 'Pedidos'],
   ['/caja', 'Caja'],
-  ['/productos', 'Productos']
+  ['/productos', 'Productos'],
+  ['/inventario', 'Inventario']
 ]
 
 export default function AppShell() {
@@ -41,11 +42,12 @@ export default function AppShell() {
 
   const navLinks = [
     ['/', 'Inicio'],
-    ['/ventas', 'Ventas'],
+    ['/mesas', 'Mesas'],
     ['/historial', 'Historial'],
     ['/pedidos', 'Pedidos'],
     ['/caja', 'Caja'],
-    ['/productos', 'Productos']
+    ['/productos', 'Productos'],
+    ['/inventario', 'Inventario']
   ]
 
   if (profile?.role === 'ADMIN') {

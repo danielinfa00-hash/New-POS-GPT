@@ -1,12 +1,15 @@
-import { collection, doc, runTransaction, serverTimestamp } from 'firebase/firestore'
+import { collection, doc, increment, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { db } from '../firebase/config'
 
-export async function createSale({ userId, cart, discount, payment, isDelivery, deliveryCost }) {
+export async function createSale({ userId, cart, discount, payment, isDelivery, deliveryCost, tableLabel, source = 'COUNTER' }) {
+  if (!db) throw new Error('Firebase no configurado')
   const subtotal = cart.reduce((total, item) => total + item.price * item.quantity, 0)
   const total = Math.max(0, subtotal - discount + deliveryCost)
   const counterRef = doc(db, 'settings', 'counters')
   const saleRef = doc(collection(db, 'sales'))
   const orderRef = doc(collection(db, 'orders'))
+
+  let saleMeta = {}
 
   await runTransaction(db, async (transaction) => {
     const counterSnapshot = await transaction.get(counterRef)
@@ -19,12 +22,24 @@ export async function createSale({ userId, cart, discount, payment, isDelivery, 
     const baseData = {
       saleNumber: nextNumber, orderCode, userId, items, subtotal, discount, deliveryCost,
       total, paymentMethod: payment.method, paymentBreakdown: payment.breakdown,
-      orderType: isDelivery ? 'DELIVERY' : 'PICKUP', createdAt: serverTimestamp()
+      orderType: isDelivery ? 'DELIVERY' : 'PICKUP', source, tableLabel: tableLabel || null,
+      createdAt: serverTimestamp()
+    }
+    saleMeta = {
+      orderCode, saleNumber: nextNumber, items, subtotal, discount, deliveryCost, total,
+      paymentMethod: payment.method, paymentBreakdown: payment.breakdown,
+      isDelivery, tableLabel: tableLabel || null, createdAt: Date.now()
     }
     transaction.set(counterRef, { saleOrderNumber: nextNumber, updatedAt: serverTimestamp() }, { merge: true })
     transaction.set(saleRef, { ...baseData, status: 'COMPLETED' })
     transaction.set(orderRef, { ...baseData, saleId: saleRef.id, status: 'NUEVO' })
+    
+    for (const item of cart) {
+      if (item.id) {
+        transaction.update(doc(db, 'products', item.id), { stock: increment(-item.quantity) })
+      }
+    }
   })
 
-  return { subtotal, total }
+  return saleMeta
 }

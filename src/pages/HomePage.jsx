@@ -38,6 +38,14 @@ export default function HomePage() {
             <h2 style={{ margin: '10px 0 0', fontSize: '1.8rem' }}>{formatMoney(metrics.totalSales)}</h2>
           </div>
           <div className="hero-card" style={{ padding: '20px' }}>
+            <p className="eyebrow">EFECTIVO HOY</p>
+            <h2 style={{ margin: '10px 0 0', fontSize: '1.8rem' }}>{formatMoney(metrics.cashTotal)}</h2>
+          </div>
+          <div className="hero-card" style={{ padding: '20px' }}>
+            <p className="eyebrow">TRANSFERENCIAS HOY</p>
+            <h2 style={{ margin: '10px 0 0', fontSize: '1.8rem' }}>{formatMoney(metrics.transferTotal)}</h2>
+          </div>
+          <div className="hero-card" style={{ padding: '20px' }}>
             <p className="eyebrow">PEDIDOS HOY</p>
             <h2 style={{ margin: '10px 0 0', fontSize: '1.8rem' }}>{metrics.totalOrders}</h2>
           </div>
@@ -45,7 +53,22 @@ export default function HomePage() {
             <p className="eyebrow">TICKET PROMEDIO</p>
             <h2 style={{ margin: '10px 0 0', fontSize: '1.8rem' }}>{formatMoney(metrics.averageTicket)}</h2>
           </div>
-          
+
+          {metrics.stockAlerts?.length > 0 && (
+            <div className="hero-card" style={{ padding: '20px', gridColumn: '1 / -1' }}>
+              <p className="eyebrow">INVENTARIO</p>
+              <ul style={{ margin: '10px 0 0', paddingLeft: '20px', color: 'var(--text-main)' }}>
+                {metrics.stockAlerts.map((p) => (
+                  <li key={p.id}>
+                    <strong>{p.name}</strong>
+                    {' — '}
+                    {p.computedAlert === 'OUT' ? 'Sin stock' : 'Stock bajo'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="hero-card" style={{ padding: '20px', gridColumn: '1 / -1' }}>
             <p className="eyebrow">PRODUCTOS MÁS VENDIDOS</p>
             <ul style={{ margin: '10px 0 0', paddingLeft: '20px', color: 'var(--text-main)' }}>

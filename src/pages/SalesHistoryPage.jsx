@@ -1,102 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { fetchSalesByDate, cancelSale } from '../services/firebase/salesHistoryService'
+import { fetchSalesByRange, cancelSale } from '../services/firebase/salesHistoryService'
 
 const formatMoney = (value) => new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(value || 0)
+function dayStart(date = new Date()) { const value = new Date(date); value.setHours(0, 0, 0, 0); return value }
+function nextDay(date) { const value = new Date(date); value.setDate(value.getDate() + 1); return value }
+function getRange(period) { const today = dayStart(); if (period === 'today') return { startDate: today, endDate: nextDay(today) }; if (period === 'yesterday') { const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1); return { startDate: yesterday, endDate: today } }; if (period === 'week') { const start = new Date(today); start.setDate(today.getDate() - ((today.getDay() + 6) % 7)); return { startDate: start, endDate: nextDay(today) } }; if (period === 'month') return { startDate: new Date(today.getFullYear(), today.getMonth(), 1), endDate: nextDay(today) }; return {} }
 
 export default function SalesHistoryPage() {
   const { user, profile } = useAuth()
-  
-  const today = new Date().toISOString().split('T')[0]
-  const [date, setDate] = useState(today)
-  const [sales, setSales] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+  const [period, setPeriod] = useState('today'), [sales, setSales] = useState([]), [loading, setLoading] = useState(true)
+  const [error, setError] = useState(''), [success, setSuccess] = useState(''), [saleToCancel, setSaleToCancel] = useState(null)
+  const [reason, setReason] = useState(''), [cancelling, setCancelling] = useState(false)
+  const isAdmin = profile?.role === 'ADMIN'
+  useEffect(() => { loadSales() }, [period])
+  async function loadSales() { setLoading(true); setError(''); try { setSales(await fetchSalesByRange(getRange(period), { userId: user?.uid, isAdmin })) } catch (err) { setError(`Error al cargar ventas: ${err.message}`) } finally { setLoading(false) } }
+  function openCancelDialog(sale) { setSaleToCancel(sale); setReason(''); setError('') }
+  function closeCancelDialog() { if (!cancelling) { setSaleToCancel(null); setReason('') } }
+  async function confirmCancel() { if (!saleToCancel || !user) return; const cancelReason = isAdmin ? 'Cancelada por administrador' : reason.trim(); if (!isAdmin && cancelReason.length < 3) return; setCancelling(true); try { await cancelSale(saleToCancel.id, cancelReason, user.uid); setSuccess('La venta fue cancelada y quedó registrada en el historial.'); setSaleToCancel(null); setReason(''); await loadSales() } catch (err) { setError(err.message || 'No fue posible cancelar la venta.') } finally { setCancelling(false) } }
 
-  useEffect(() => {
-    loadSales()
-  }, [date])
-
-  async function loadSales() {
-    setLoading(true)
-    setError('')
-    try {
-      const data = await fetchSalesByDate(date)
-      setSales(data)
-    } catch (err) {
-      setError('Error al cargar ventas: ' + err.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleCancel(saleId) {
-    const reason = prompt('Motivo de cancelación:')
-    if (!reason) return
-    
-    try {
-      await cancelSale(saleId, reason, user.uid)
-      setSuccess('Venta cancelada correctamente')
-      loadSales()
-    } catch (err) {
-      setError('Error al cancelar venta')
-    }
-  }
-
-  return (
-    <section className="catalog-page">
-      <p className="eyebrow">REPORTES</p>
-      <h1>Historial de Ventas</h1>
-      
-      {error && <p className="notice error-message">{error}</p>}
-      {success && <p className="notice success">{success}</p>}
-
-      <div className="catalog-form" style={{ marginBottom: '20px' }}>
-        <label>Fecha de consulta
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} max={today} />
-        </label>
-      </div>
-
-      {loading ? (
-        <p>Cargando ventas...</p>
-      ) : sales.length === 0 ? (
-        <p className="empty-state">No hay ventas registradas para esta fecha.</p>
-      ) : (
-        <div className="catalog-list">
-          {sales.map(sale => (
-            <article key={sale.id} className="catalog-item category-item" style={{ opacity: sale.status === 'CANCELLED' ? 0.6 : 1 }}>
-              <div>
-                <strong>Total: {formatMoney(sale.total)}</strong>
-                <small>Método: {sale.payment?.method || 'N/A'}</small>
-                <small>Artículos: {sale.cart?.length || 0}</small>
-                {sale.status === 'CANCELLED' && (
-                  <small className="unavailable">CANCELADA: {sale.cancelReason}</small>
-                )}
-                {sale.isDelivery && <small style={{color: 'var(--primary)'}}>Domicilio (+{formatMoney(sale.deliveryCost)})</small>}
-              </div>
-              
-              <div className="item-actions">
-                <details style={{ width: '100%' }}>
-                  <summary style={{ cursor: 'pointer', padding: '10px 0', fontWeight: 'bold', color: 'var(--text-main)' }}>Ver detalle</summary>
-                  <ul style={{ paddingLeft: '20px', margin: '5px 0', color: 'var(--text-muted)' }}>
-                    {sale.cart?.map((item, idx) => (
-                      <li key={idx}>
-                        {item.quantity}x {item.name} - {formatMoney(item.price * item.quantity)}
-                      </li>
-                    ))}
-                  </ul>
-                  {sale.discount > 0 && <p>Descuento: -{formatMoney(sale.discount)}</p>}
-                </details>
-
-                {sale.status !== 'CANCELLED' && (profile?.role === 'ADMIN' || profile?.role === 'CAJERO') && (
-                  <button className="delete-button" onClick={() => handleCancel(sale.id)}>Cancelar Venta</button>
-                )}
-              </div>
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  )
+  return <section className="catalog-page sales-history-page">
+    <p className="eyebrow">REPORTES</p><h1>Historial de ventas</h1>
+    {error && <p className="notice error-message">{error}</p>}{success && <p className="notice success">{success}</p>}
+    <div className="history-filter" role="group" aria-label="Periodo del historial">{[['all', 'Todas'], ['today', 'Hoy'], ['yesterday', 'Ayer'], ['week', 'Semana'], ['month', 'Mes']].map(([key, label]) => <button type="button" key={key} className={period === key ? 'active' : ''} onClick={() => setPeriod(key)}>{label}</button>)}</div>
+    {loading ? <p>Cargando ventas…</p> : sales.length === 0 ? <p className="empty-state">No hay ventas registradas para este periodo.</p> : <div className="sales-list">{sales.map((sale) => {
+      const items = sale.items || sale.cart || [], itemCount = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0), paymentMethod = sale.paymentMethod || sale.payment?.method || 'N/A', cancelled = sale.status === 'CANCELLED'
+      return <article key={sale.id} className={`sale-card ${cancelled ? 'cancelled' : ''}`}><div className="sale-main"><div><strong>{sale.orderCode || `Venta #${sale.saleNumber || sale.id.slice(0, 5)}`}</strong><small>{paymentMethod} · {itemCount} {itemCount === 1 ? 'artículo' : 'artículos'}{(sale.isDelivery || sale.orderType === 'DELIVERY') ? ' · Domicilio' : ''}</small>{cancelled && <small className="sale-cancelled">Anulada · {sale.cancelReason || 'Sin motivo'}</small>}</div><strong className="sale-total">{formatMoney(sale.total)}</strong></div><div className="sale-actions"><details className="sale-details-panel"><summary>Detalle</summary><div className="sale-details">{items.map((item, index) => { const unitPrice = item.unitPrice ?? item.price ?? 0, name = item.productName || item.name || 'Producto'; return <div className="sale-line" key={`${item.productId || item.id || name}-${index}`}><span>{item.quantity}× {name}{item.note && <small> · {item.note}</small>}</span><strong>{formatMoney((item.subtotal ?? unitPrice * item.quantity) || 0)}</strong></div> })}{sale.discount > 0 && <div className="sale-summary-line"><span>Descuento</span><strong>−{formatMoney(sale.discount)}</strong></div>}{(sale.isDelivery || sale.orderType === 'DELIVERY') && <div className="sale-summary-line"><span>Domicilio</span><strong>{formatMoney(sale.deliveryCost)}</strong></div>}</div></details>{!cancelled && (isAdmin || profile?.role === 'CAJERO') && <button type="button" className="sale-cancel-button" onClick={() => openCancelDialog(sale)}>Anular</button>}</div></article>
+    })}</div>}
+    {saleToCancel && <div className="confirmation-backdrop" role="presentation" onMouseDown={closeCancelDialog}><section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="cancel-sale-title" onMouseDown={(event) => event.stopPropagation()}><span className="modal-icon">!</span><p className="eyebrow">ANULAR VENTA</p><h2 id="cancel-sale-title">¿Cancelar {saleToCancel.orderCode || 'esta venta'}?</h2>{isAdmin ? <p>Esta acción anulará la venta y la conservará en el historial de auditoría.</p> : <><p>Indica el motivo de la cancelación. El administrador podrá verlo en el historial.</p><label>Motivo de cancelación<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ej. El cliente desistió del pedido" autoFocus /></label></>}<div className="modal-actions"><button type="button" className="secondary-button" onClick={closeCancelDialog} disabled={cancelling}>Volver</button><button type="button" className="danger-button" onClick={confirmCancel} disabled={cancelling || (!isAdmin && reason.trim().length < 3)}>{cancelling ? 'Cancelando…' : 'Sí, cancelar venta'}</button></div></section></div>}
+  </section>
 }
