@@ -14,10 +14,6 @@ function tableSubtotal(cart) {
   return (cart || []).reduce((total, item) => total + item.price * item.quantity, 0)
 }
 
-function cartsMatch(left, right) {
-  return JSON.stringify(left || []) === JSON.stringify(right || [])
-}
-
 export default function TablesPage() {
   const { user } = useAuth()
   const [tables, setTables] = useState([])
@@ -46,7 +42,7 @@ export default function TablesPage() {
   const [toast, setToast] = useState('')
   const [editingTableId, setEditingTableId] = useState(null)
   const persistTimer = useRef(null)
-  const hasPendingLocalEdit = useRef(false)
+  const initializedTableId = useRef(null)
 
   const selectedTable = useMemo(() => tables.find((t) => t.id === selectedTableId) || null, [tables, selectedTableId])
 
@@ -72,33 +68,25 @@ export default function TablesPage() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
-  // Sync only on selection change to initialize
+  // Initialize a cart only once for each table. After that, the local cart is
+  // the source of truth while the order is being edited, preventing delayed
+  // Firestore snapshots from making recently added products disappear.
   useEffect(() => {
     setCheckoutOpen(false)
     if (!selectedTableId) {
+      initializedTableId.current = null
       setLocalCart([])
       setLocalDiscount(0)
       setTableNote('')
       return
     }
+    if (initializedTableId.current === selectedTableId) return
     const table = tables.find((t) => t.id === selectedTableId)
     if (!table) return
     setLocalCart(table.cart || [])
     setLocalDiscount(table.discount || 0)
     setTableNote(table.note || '')
-  }, [selectedTableId]) // Only depend on selectedTableId
-
-  // Background sync for cart from other devices (avoid overwriting during active edits)
-  useEffect(() => {
-    if (!selectedTableId) return
-    const table = tables.find((t) => t.id === selectedTableId)
-    if (!table) return
-    // Do not replace an optimistic local edit with a delayed Firestore snapshot.
-    if (hasPendingLocalEdit.current) return
-    setLocalCart((current) => {
-      if (!cartsMatch(current, table.cart)) return table.cart || []
-      return current
-    })
+    initializedTableId.current = selectedTableId
   }, [tables, selectedTableId])
 
   const persistTable = useCallback((tableId, cart, discount, note) => {
@@ -107,14 +95,14 @@ export default function TablesPage() {
     persistTimer.current = setTimeout(() => {
       updateTableOrder(tableId, { cart, discount, note })
         .catch(() => setError('No se pudo guardar la orden en la base de datos (revisa los permisos).'))
-        .finally(() => { hasPendingLocalEdit.current = false; persistTimer.current = null })
+        .finally(() => { persistTimer.current = null })
     }, 400)
   }, [])
 
   useEffect(() => {
-    if (!selectedTableId || !selectedTable) return
+    if (!selectedTableId) return
     persistTable(selectedTableId, localCart, localDiscount, tableNote)
-  }, [localCart, localDiscount, tableNote, selectedTableId, selectedTable, persistTable])
+  }, [localCart, localDiscount, tableNote, selectedTableId, persistTable])
 
   const visibleProducts = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('es')
@@ -139,7 +127,6 @@ export default function TablesPage() {
   function addToCart(product) {
     setError('')
     setToast(`${product.name} añadido a ${selectedTable?.label || 'la mesa'}`)
-    hasPendingLocalEdit.current = true
     setLocalCart((current) => {
       const existing = current.find((item) => item.id === product.id)
       if (existing) return current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item)
@@ -148,12 +135,10 @@ export default function TablesPage() {
   }
 
   function changeQuantity(id, quantity) {
-    hasPendingLocalEdit.current = true
     setLocalCart((current) => quantity < 1 ? current.filter((item) => item.id !== id) : current.map((item) => item.id === id ? { ...item, quantity } : item))
   }
 
   function updateItem(id, changes) {
-    hasPendingLocalEdit.current = true
     setLocalCart((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
   }
 
