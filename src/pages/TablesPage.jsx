@@ -14,6 +14,10 @@ function tableSubtotal(cart) {
   return (cart || []).reduce((total, item) => total + item.price * item.quantity, 0)
 }
 
+function cartsMatch(left, right) {
+  return JSON.stringify(left || []) === JSON.stringify(right || [])
+}
+
 export default function TablesPage() {
   const { user } = useAuth()
   const [tables, setTables] = useState([])
@@ -21,7 +25,7 @@ export default function TablesPage() {
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
   const [selectedTableId, setSelectedTableId] = useState(null)
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [newTableNumber, setNewTableNumber] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -37,11 +41,12 @@ export default function TablesPage() {
   const [localCart, setLocalCart] = useState([])
   const [localDiscount, setLocalDiscount] = useState(0)
   const [tableNote, setTableNote] = useState('')
-  const [sortOrder, setSortOrder] = useState('name-asc')
+  const [sortOrder, setSortOrder] = useState('price-asc')
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState('')
   const [editingTableId, setEditingTableId] = useState(null)
   const persistTimer = useRef(null)
+  const hasPendingLocalEdit = useRef(false)
 
   const selectedTable = useMemo(() => tables.find((t) => t.id === selectedTableId) || null, [tables, selectedTableId])
 
@@ -53,6 +58,13 @@ export default function TablesPage() {
     const stopProducts = subscribeToProducts(setProducts, onError)
     return () => { stopTables(); stopConfig(); stopCategories(); stopProducts() }
   }, [])
+
+  useEffect(() => {
+    const activeCategories = categories.filter((category) => category.active)
+    if (!activeCategories.some((category) => category.id === selectedCategory)) {
+      setSelectedCategory(activeCategories[0]?.id || '')
+    }
+  }, [categories, selectedCategory])
 
   useEffect(() => {
     if (!toast) return undefined
@@ -81,10 +93,10 @@ export default function TablesPage() {
     if (!selectedTableId) return
     const table = tables.find((t) => t.id === selectedTableId)
     if (!table) return
-    // Only overwrite if the cart length changed (e.g., someone else added an item)
-    // This prevents local typing/quantities from being overwritten by delayed snapshots
+    // Do not replace an optimistic local edit with a delayed Firestore snapshot.
+    if (hasPendingLocalEdit.current) return
     setLocalCart((current) => {
-      if (current.length !== (table.cart || []).length) return table.cart || []
+      if (!cartsMatch(current, table.cart)) return table.cart || []
       return current
     })
   }, [tables, selectedTableId])
@@ -95,7 +107,7 @@ export default function TablesPage() {
     persistTimer.current = setTimeout(() => {
       updateTableOrder(tableId, { cart, discount, note })
         .catch(() => setError('No se pudo guardar la orden en la base de datos (revisa los permisos).'))
-        .finally(() => { persistTimer.current = null })
+        .finally(() => { hasPendingLocalEdit.current = false; persistTimer.current = null })
     }, 400)
   }, [])
 
@@ -106,7 +118,7 @@ export default function TablesPage() {
 
   const visibleProducts = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('es')
-    const list = products.filter((p) => p.available && (selectedCategory === 'all' || p.categoryId === selectedCategory) && (!term || p.name.toLocaleLowerCase('es').includes(term)))
+    const list = products.filter((p) => p.available && p.categoryId === selectedCategory && (!term || p.name.toLocaleLowerCase('es').includes(term)))
     return list.sort((a, b) => {
       if (sortOrder === 'name-desc') return b.name.localeCompare(a.name, 'es')
       if (sortOrder === 'price-asc') return Number(a.price || 0) - Number(b.price || 0)
@@ -127,6 +139,7 @@ export default function TablesPage() {
   function addToCart(product) {
     setError('')
     setToast(`${product.name} añadido a ${selectedTable?.label || 'la mesa'}`)
+    hasPendingLocalEdit.current = true
     setLocalCart((current) => {
       const existing = current.find((item) => item.id === product.id)
       if (existing) return current.map((item) => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item)
@@ -135,10 +148,12 @@ export default function TablesPage() {
   }
 
   function changeQuantity(id, quantity) {
+    hasPendingLocalEdit.current = true
     setLocalCart((current) => quantity < 1 ? current.filter((item) => item.id !== id) : current.map((item) => item.id === id ? { ...item, quantity } : item))
   }
 
   function updateItem(id, changes) {
+    hasPendingLocalEdit.current = true
     setLocalCart((current) => current.map((item) => item.id === id ? { ...item, ...changes } : item))
   }
 
@@ -284,12 +299,11 @@ export default function TablesPage() {
         <div className="pos-layout">
           <div className="menu-panel">
             <div className="category-chips">
-              <button type="button" className={selectedCategory === 'all' ? 'selected' : ''} onClick={() => setSelectedCategory('all')}>Todos</button>
               {categories.filter((c) => c.active).map((category) => (
                 <button type="button" key={category.id} className={selectedCategory === category.id ? 'selected' : ''} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>
               ))}
             </div>
-            <div className="product-toolbar"><label className="product-search">Buscar producto<input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nombre del producto" /></label><label className="product-sort">Ordenar productos<select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="name-asc">Nombre: A a Z</option><option value="name-desc">Nombre: Z a A</option><option value="price-asc">Precio: menor a mayor</option><option value="price-desc">Precio: mayor a menor</option></select></label></div>
+            <div className="product-toolbar"><label className="product-search">Buscar producto<input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Nombre del producto" /></label><label className="product-sort">Ordenar productos<select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="price-asc">Precio: menor a mayor</option><option value="price-desc">Precio: mayor a menor</option><option value="name-asc">Nombre: A a Z</option><option value="name-desc">Nombre: Z a A</option></select></label></div>
             <div className="product-grid">
               {visibleProducts.map((product) => (
                 <button type="button" className="pos-product" key={product.id} onClick={() => addToCart(product)}>

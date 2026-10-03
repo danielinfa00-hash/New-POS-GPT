@@ -11,7 +11,7 @@ export default function SalesPage() {
   const { user } = useAuth()
   const [categories, setCategories] = useState([])
   const [products, setProducts] = useState([])
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedCategory, setSelectedCategory] = useState('')
   const [cart, setCart] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('pos-counter-cart') || '[]') } catch { return [] }
   })
@@ -25,7 +25,7 @@ export default function SalesPage() {
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [receipt, setReceipt] = useState(null)
-  const [sortOrder, setSortOrder] = useState('name-asc')
+  const [sortOrder, setSortOrder] = useState('price-asc')
   const [search, setSearch] = useState('')
   const [toast, setToast] = useState('')
 
@@ -35,6 +35,13 @@ export default function SalesPage() {
     const stopProducts = subscribeToProducts(setProducts, onError)
     return () => { stopCategories(); stopProducts() }
   }, [])
+
+  useEffect(() => {
+    const activeCategories = categories.filter((category) => category.active)
+    if (!activeCategories.some((category) => category.id === selectedCategory)) {
+      setSelectedCategory(activeCategories[0]?.id || '')
+    }
+  }, [categories, selectedCategory])
 
   useEffect(() => {
     sessionStorage.setItem('pos-counter-cart', JSON.stringify(cart))
@@ -48,7 +55,7 @@ export default function SalesPage() {
 
   const visibleProducts = useMemo(() => {
     const term = search.trim().toLocaleLowerCase('es')
-    const list = products.filter((product) => product.available && (selectedCategory === 'all' || product.categoryId === selectedCategory) && (!term || product.name.toLocaleLowerCase('es').includes(term)))
+    const list = products.filter((product) => product.available && product.categoryId === selectedCategory && (!term || product.name.toLocaleLowerCase('es').includes(term)))
     return list.sort((a, b) => {
       if (sortOrder === 'name-desc') return b.name.localeCompare(a.name, 'es')
       if (sortOrder === 'price-asc') return Number(a.price || 0) - Number(b.price || 0)
@@ -101,8 +108,8 @@ export default function SalesPage() {
     <p className="eyebrow">PUNTO DE VENTA</p><h1>Nueva venta</h1>
     {success && <p className="notice success">{success}</p>}{error && <p className="notice error-message">{error}</p>}
     <div className="pos-layout">
-      <div className="menu-panel"><div className="category-chips"><button type="button" className={selectedCategory === 'all' ? 'selected' : ''} onClick={() => setSelectedCategory('all')}>Todos</button>{categories.filter((category) => category.active).map((category) => <button type="button" key={category.id} className={selectedCategory === category.id ? 'selected' : ''} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>)}</div>
-        <div className="product-toolbar"><label className="product-search">Buscar producto<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre del producto" /></label><label className="product-sort">Ordenar productos<select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="name-asc">Nombre: A a Z</option><option value="name-desc">Nombre: Z a A</option><option value="price-asc">Precio: menor a mayor</option><option value="price-desc">Precio: mayor a menor</option></select></label></div>
+      <div className="menu-panel"><div className="category-chips">{categories.filter((category) => category.active).map((category) => <button type="button" key={category.id} className={selectedCategory === category.id ? 'selected' : ''} onClick={() => setSelectedCategory(category.id)}>{category.name}</button>)}</div>
+        <div className="product-toolbar"><label className="product-search">Buscar producto<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre del producto" /></label><label className="product-sort">Ordenar productos<select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="price-asc">Precio: menor a mayor</option><option value="price-desc">Precio: mayor a menor</option><option value="name-asc">Nombre: A a Z</option><option value="name-desc">Nombre: Z a A</option></select></label></div>
         <div className="product-grid">{visibleProducts.map((product) => <button type="button" className="pos-product" key={product.id} onClick={() => { addToCart(product); setSuccess('') }}>{product.imageUrl && <img src={product.imageUrl} alt="" />}<strong>{product.name}</strong><span>{formatMoney(product.price)}</span></button>)}{!visibleProducts.length && <p className="empty-state">No hay productos disponibles en esta categoría.</p>}</div>
       </div>
       
